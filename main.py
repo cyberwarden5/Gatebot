@@ -68,12 +68,20 @@ GATEWAYS = {
 registered_users = set()
 
 async def check_gateway(url):
+    """
+    Check a given URL for payment gateways and security features.
+    
+    This function performs advanced detection of payment gateways, Cloudflare,
+    captchas, and other security mechanisms by analyzing the HTML content,
+    JavaScript, and headers of the response.
+    """
     try:
         async with aiohttp.ClientSession() as session:
             # Ignore SSL verification
             async with session.get(url, ssl=False, timeout=10) as response:
                 html = await response.text()
                 status_code = response.status
+                headers = response.headers
 
                 soup = BeautifulSoup(html, 'html.parser')
 
@@ -82,18 +90,37 @@ async def check_gateway(url):
                     if any(re.search(pattern, html, re.IGNORECASE) for pattern in patterns):
                         gateways_found.append(gateway)
 
-                captcha_detected = "Yes" if re.search(r"captcha|recaptcha|hcaptcha", html, re.IGNORECASE) else "No"
-                cloudflare_detected = "Yes" if "cloudflare" in html.lower() or "__cf_" in html else "No"
-                payment_security = "3D" if "3d-secure" in html.lower() or "three-d-secure" in html.lower() else "2D"
+                # Advanced Cloudflare detection
+                cloudflare_detected = "Yes" if any([
+                    "cloudflare" in html.lower(),
+                    "__cf_" in html,
+                    "cf-ray" in headers,
+                    soup.find('a', href=re.compile(r'cloudflare.com'))
+                ]) else "No"
+
+                # Advanced Captcha detection
+                captcha_detected = "Yes" if any([
+                    re.search(r"captcha|recaptcha|hcaptcha", html, re.IGNORECASE),
+                    soup.find('div', class_=re.compile(r'g-recaptcha|h-captcha')),
+                    "grecaptcha" in html,
+                    "hcaptcha" in html
+                ]) else "No"
+
+                # Payment security type detection
+                payment_security = "3D" if any([
+                    "3d-secure" in html.lower(),
+                    "three-d-secure" in html.lower(),
+                    re.search(r"Cardinal\.setup", html)
+                ]) else "2D"
+
+                # CVV requirement detection
                 cvv_required = "Required" if re.search(r"cvv|cvc|security code", html, re.IGNORECASE) else "Not Required"
-                inbuilt_payment = "Yes" if re.search(r"checkout|payment", html, re.IGNORECASE) else "No"
 
-                # Advanced detection for Cloudflare and reCAPTCHA
-                if cloudflare_detected == "No":
-                    cloudflare_detected = "Yes" if soup.find('a', href=re.compile(r'cloudflare.com')) else "No"
-
-                if captcha_detected == "No":
-                    captcha_detected = "Yes" if soup.find('div', class_=re.compile(r'g-recaptcha|h-captcha')) else "No"
+                # Inbuilt payment system detection
+                inbuilt_payment = "Yes" if any([
+                    re.search(r"checkout|payment", html, re.IGNORECASE),
+                    soup.find('form', id=re.compile(r'checkout|payment', re.IGNORECASE))
+                ]) else "No"
 
                 return {
                     "status_code": status_code,
@@ -106,8 +133,10 @@ async def check_gateway(url):
                 }
     except asyncio.TimeoutError:
         return {"error": "Timeout"}
+    except aiohttp.ClientError as e:
+        return {"error": f"Connection error: {str(e)}"}
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"Unexpected error: {str(e)}"}
 
 @app.on_message(filters.command("start"))
 async def start_command(client, message: Message):
@@ -134,7 +163,7 @@ async def about_command(client, message: Message):
         "🔍 **Gateway Checker Bot**\n\n"
         "This bot helps you check payment gateways for URLs.\n\n"
         "Available commands:\n"
-        "• /chk - Check gateways for multiple URLs\n"
+        "• /chk - Check gateways for multiple URLs (up to 15)\n"
         "• /txt - Check gateways from a text file\n\n"
         "Supported gateways:\n"
         "• Stripe 💳\n"
@@ -162,12 +191,23 @@ async def chk_command(client, message: Message):
         await message.reply("Please provide URLs to check.")
         return
 
+    if len(urls) > 15:
+        await message.reply("Maximum 15 URLs allowed.")
+        return
+
     response = await message.reply("🔍 Gateway Checker\n━━━━━━━━━━━━━━")
+    results = []
 
     for url in urls:
         result = await check_gateway(url)
         if "error" in result:
-            gateway_info = f"🔍 Error: {result['error']} ❌\n"
+            gateway_info = (
+                f"🔍 Error Checking Gateway ❌\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"[❃] URL: {url}\n"
+                f"[❃] Error: {result['error']}\n"
+                f"––––––––––––––––––––\n\n"
+            )
         else:
             gateway_info = (
                 f"🔍 Gateway Fetched Successfully ✅\n"
@@ -182,12 +222,17 @@ async def chk_command(client, message: Message):
                 f"[❃] Status Code: {result['status_code']}\n"
                 f"––––––––––––––––––––\n\n"
             )
-
+        
+        results.append(gateway_info)
+        
+        # Update the message with all results processed so far
+        full_message = "🔍 Gateway Checker\n━━━━━━━━━━━━━━\n\n" + "".join(results)
+        
         try:
-            await response.edit(response.text + gateway_info)
-        except Exception:
-            # If edit fails, send a new message
-            response = await message.reply(response.text + gateway_info)
+            await response.edit(full_message)
+        except Exception as e:
+            # If edit fails due to message length, send a new message
+            response = await message.reply(full_message)
 
 @app.on_message(filters.command("txt") & filters.reply)
 async def txt_command(client, message: Message):
