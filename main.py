@@ -50,14 +50,30 @@ async def check_gateway(url):
                 html = await response.text()
                 status_code = response.status
 
+                gateways_found = []
                 for gateway, patterns in GATEWAYS.items():
-                    if any(re.search(pattern, html) for pattern in patterns):
-                        return status_code, gateway
-                return status_code, "Not Found"
+                    if any(re.search(pattern, html, re.IGNORECASE) for pattern in patterns):
+                        gateways_found.append(gateway)
+
+                captcha_detected = "Yes" if re.search(r"captcha|recaptcha", html, re.IGNORECASE) else "No"
+                cloudflare_detected = "Yes" if "cloudflare" in html.lower() else "No"
+                payment_security = "3D" if "3d-secure" in html.lower() else "2D"
+                cvv_required = "Required" if re.search(r"cvv|cvc|security code", html, re.IGNORECASE) else "Not Required"
+                inbuilt_payment = "Yes" if re.search(r"checkout|payment", html, re.IGNORECASE) else "No"
+
+                return {
+                    "status_code": status_code,
+                    "gateways": gateways_found,
+                    "captcha": captcha_detected,
+                    "cloudflare": cloudflare_detected,
+                    "payment_security": payment_security,
+                    "cvv": cvv_required,
+                    "inbuilt_payment": inbuilt_payment
+                }
     except asyncio.TimeoutError:
-        return None, "Timeout"
+        return {"error": "Timeout"}
     except Exception as e:
-        return None, "Error"
+        return {"error": str(e)}
 
 @app.on_message(filters.command("start"))
 async def start_command(client, message: Message):
@@ -84,7 +100,7 @@ async def about_command(client, message: Message):
         "🔍 **Gateway Checker Bot**\n\n"
         "This bot helps you check payment gateways for URLs.\n\n"
         "Available commands:\n"
-        "• /chk - Check gateways for URLs (max 15)\n"
+        "• /chk - Check gateways for URLs\n"
         "• /txt - Check gateways from a text file\n\n"
         "Supported gateways:\n"
         "• Stripe 💳\n"
@@ -106,30 +122,34 @@ async def chk_command(client, message: Message):
         await message.reply("Please provide URLs to check.")
         return
 
-    if len(urls) > 15:
-        await message.reply("Maximum 15 URLs allowed.")
-        return
-
-    response = await message.reply("🔍 GATE CHECKER\n___________________")
+    response = await message.reply("🔍 Gateway Checker\n━━━━━━━━━━━━━━")
 
     for url in urls:
-        # Update message with URL being checked
-        current_result = f"\n\n🔹 URL: {url}\n➡️ HTTP: \n➡️ GATEWAY: "
-        await response.edit(response.text + current_result)
+        result = await check_gateway(url)
+        if "error" in result:
+            gateway_info = f"🔍 Error: {result['error']} ❌\n"
+        else:
+            gateway_info = (
+                f"🔍 Gateway Fetched Successfully ✅\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"[❃] URL: {url}\n"
+                f"[❃] Payment Gateways: {', '.join(result['gateways']) if result['gateways'] else 'None'}\n"
+                f"[❃] Captcha Detected: {result['captcha']}\n"
+                f"[❃] Cloudflare Detected: {result['cloudflare']}\n"
+                f"[❃] Payment Security Type: {result['payment_security']}\n"
+                f"[❃] CVV/CVC Requirement: {result['cvv']}\n"
+                f"[❃] Inbuilt Payment System: {result['inbuilt_payment']}\n"
+                f"[❃] Status Code: {result['status_code']}\n"
+                f"––––––––––––––––––––\n"
+            )
 
-        # Check gateway
-        status_code, gateway = await check_gateway(url)
+        try:
+            await response.edit(response.text + "\n\n" + gateway_info)
+        except Exception:
+            # If edit fails, send a new message
+            response = await message.reply(response.text + "\n\n" + gateway_info)
 
-        # Update message with results
-        result = (
-            f"\n\n🔹 URL: {url}\n"
-            f"➡️ HTTP: {status_code or 'N/A'}\n"
-            f"➡️ GATEWAY: {gateway}\n"
-        )
-        await response.edit(response.text.replace(current_result, result))
-
-    # Add completion message
-    await response.edit(response.text + "\n\n✅ Check completed!")
+    await response.edit(response.text + "\n✅ Check completed!")
 
 @app.on_message(filters.command("txt") & filters.reply)
 async def txt_command(client, message: Message):
@@ -156,34 +176,37 @@ async def txt_command(client, message: Message):
     response = await message.reply(f"Found {total_urls} URLs. Starting check...")
 
     results = {gateway: [] for gateway in GATEWAYS.keys()}
-    results["Not Found"] = []
-    results["Error"] = []
+    checked = 0
 
     async def update_message():
-        while True:
+        while checked < total_urls:
             await asyncio.sleep(2)
-            checked = sum(len(v) for v in results.values())
             remaining = total_urls - checked
             status = (
-                "🔍 MASS CHECKER\n"
-                "___________________\n"
-                f"📊 Total: {total_urls}\n"
-                f"✅ Checked: {checked}\n"
-                f"⏳ Remaining: {remaining}\n"
-                "___________________\n"
+                "MASS CHECKER\n"
+                "━━━━━━━━━━━━━━\n"
+                f"Total: {total_urls}\n"
+                f"Checked: {checked}\n"
+                f"Remaining: {remaining}\n"
+                f"Stripe: {len(results['Stripe'])}\n"
+                f"Braintree: {len(results['Braintree'])}\n"
+                f"PayPal: {len(results['PayPal'])}\n"
+                f"Shopify: {len(results['Shopify'])}\n"
             )
-            status += "\n".join(f"{'🔹' if v else '◻️'} {k}: {len(v)}" for k, v in results.items())
             try:
                 await response.edit(status)
             except Exception:
-                # If edit fails (e.g., message rate limit), continue silently
+                # If edit fails, continue silently
                 pass
 
     update_task = asyncio.create_task(update_message())
 
     for url in urls:
-        _, gateway = await check_gateway(url)
-        results[gateway].append(url)
+        result = await check_gateway(url)
+        checked += 1
+        if "error" not in result and result["gateways"]:
+            for gateway in result["gateways"]:
+                results[gateway].append(url)
 
     update_task.cancel()
 
