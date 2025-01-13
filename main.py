@@ -46,7 +46,7 @@ async def check_gateway(url):
     try:
         async with aiohttp.ClientSession() as session:
             # Ignore SSL verification
-            async with session.get(url, ssl=False) as response:
+            async with session.get(url, ssl=False, timeout=10) as response:
                 html = await response.text()
                 status_code = response.status
 
@@ -54,8 +54,10 @@ async def check_gateway(url):
                     if any(re.search(pattern, html) for pattern in patterns):
                         return status_code, gateway
                 return status_code, "Not Found"
+    except asyncio.TimeoutError:
+        return None, "Timeout"
     except Exception as e:
-        return None, str(e)
+        return None, "Error"
 
 @app.on_message(filters.command("start"))
 async def start_command(client, message: Message):
@@ -108,17 +110,26 @@ async def chk_command(client, message: Message):
         await message.reply("Maximum 15 URLs allowed.")
         return
 
-    response = await message.reply("GATE CHECKER\n_________________")
+    response = await message.reply("🔍 GATE CHECKER\n___________________")
 
     for url in urls:
+        # Update message with URL being checked
+        current_result = f"\n\n🔹 URL: {url}\n➡️ HTTP: \n➡️ GATEWAY: "
+        await response.edit(response.text + current_result)
+
+        # Check gateway
         status_code, gateway = await check_gateway(url)
+
+        # Update message with results
         result = (
-            f"URL: {url}\n"
-            f"HTTP: {status_code}\n"
-            f"GATEWAY: {gateway}\n"
-            "_________________\n"
+            f"\n\n🔹 URL: {url}\n"
+            f"➡️ HTTP: {status_code or 'N/A'}\n"
+            f"➡️ GATEWAY: {gateway}\n"
         )
-        await response.edit(response.text + "\n" + result)
+        await response.edit(response.text.replace(current_result, result))
+
+    # Add completion message
+    await response.edit(response.text + "\n\n✅ Check completed!")
 
 @app.on_message(filters.command("txt") & filters.reply)
 async def txt_command(client, message: Message):
@@ -141,22 +152,32 @@ async def txt_command(client, message: Message):
         await message.reply("No valid URLs found in the file.")
         return
 
-    response = await message.reply(f"Found {len(urls)} URLs. Starting checking...")
+    total_urls = len(urls)
+    response = await message.reply(f"Found {total_urls} URLs. Starting check...")
 
     results = {gateway: [] for gateway in GATEWAYS.keys()}
     results["Not Found"] = []
+    results["Error"] = []
 
     async def update_message():
         while True:
             await asyncio.sleep(2)
-            counts = {k: len(v) for k, v in results.items()}
+            checked = sum(len(v) for v in results.values())
+            remaining = total_urls - checked
             status = (
-                "MASS CHECKER\n"
-                "_________________\n"
-                f"Total: {len(urls)}\n"
+                "🔍 MASS CHECKER\n"
+                "___________________\n"
+                f"📊 Total: {total_urls}\n"
+                f"✅ Checked: {checked}\n"
+                f"⏳ Remaining: {remaining}\n"
+                "___________________\n"
             )
-            status += "\n".join(f"{k}: {v}" for k, v in counts.items())
-            await response.edit(status)
+            status += "\n".join(f"{'🔹' if v else '◻️'} {k}: {len(v)}" for k, v in results.items())
+            try:
+                await response.edit(status)
+            except Exception:
+                # If edit fails (e.g., message rate limit), continue silently
+                pass
 
     update_task = asyncio.create_task(update_message())
 
@@ -166,12 +187,20 @@ async def txt_command(client, message: Message):
 
     update_task.cancel()
 
+    # Send final results
     for gateway, urls in results.items():
         if urls:
-            result_text = f"{gateway} Hits\n---------------\n" + "\n".join(urls)
-            await message.reply(result_text)
+            result_text = f"🔍 {gateway} Hits\n---------------\n" + "\n".join(urls)
+            try:
+                await message.reply(result_text)
+            except Exception as e:
+                # If message is too long, split it
+                chunks = [urls[i:i + 50] for i in range(0, len(urls), 50)]
+                for i, chunk in enumerate(chunks):
+                    chunk_text = f"🔍 {gateway} Hits (Part {i+1})\n---------------\n" + "\n".join(chunk)
+                    await message.reply(chunk_text)
 
-    await response.delete()
+    await response.edit(response.text + "\n\n✅ Check completed!")
 
 # Run the bot
 app.run()
