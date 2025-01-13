@@ -24,7 +24,8 @@ app = Client("gateway_checker_bot", api_id=API_ID, api_hash=API_HASH, bot_token=
 GATEWAYS = {
     "Stripe": [
         r"<script src=\"https://js.stripe.com/v3/\"></script>",
-        r"Stripe.setPublishableKey"
+        r"Stripe.setPublishableKey",
+        r"https://r.stripe.com/b"  # New Stripe detection script
     ],
     "Braintree": [
         r"<script src=\"https://js.braintreegateway.com/v2/braintree.js\"></script>",
@@ -163,7 +164,7 @@ async def about_command(client, message: Message):
         "🔍 **Gateway Checker Bot**\n\n"
         "This bot helps you check payment gateways for URLs.\n\n"
         "Available commands:\n"
-        "• /chk - Check gateways for multiple URLs (up to 15)\n"
+        "• /chk - Check gateways for multiple URLs\n"
         "• /txt - Check gateways from a text file\n\n"
         "Supported gateways:\n"
         "• Stripe 💳\n"
@@ -186,47 +187,53 @@ async def chk_command(client, message: Message):
         await message.reply("🚫 You need to register first. Please use the /register command.")
         return
 
-    urls = message.text.split("\n")[1:]
+    # Extract URLs from the message
+    if message.reply_to_message:
+        # If replying to a message, extract URLs from that message
+        text = message.reply_to_message.text or message.reply_to_message.caption
+    else:
+        # Otherwise, use the current message
+        text = message.text
+
+    # Use regex to find URLs in the text
+    urls = re.findall(r'https?://\S+', text)
+
     if not urls:
         await message.reply("Please provide URLs to check.")
         return
 
-    if len(urls) > 15:
-        await message.reply("Maximum 15 URLs allowed.")
-        return
-
-    response = await message.reply("🔍 Gateway Checker\n━━━━━━━━━━━━━━")
+    response = await message.reply(f"**{message.text.split()[0]}**\n\n🔍 Gateway Checker\n━━━━━━━━━━━━━━")
     results = []
 
     for url in urls:
         result = await check_gateway(url)
         if "error" in result:
             gateway_info = (
-                f"🔍 Error Checking Gateway ❌\n"
+                f"🔍 **Error Checking Gateway** ❌\n"
                 f"━━━━━━━━━━━━━━\n"
-                f"[❃] URL: {url}\n"
-                f"[❃] Error: {result['error']}\n"
+                f"[❃] **URL:** {url}\n"
+                f"[❃] **Error:** {result['error']}\n"
                 f"––––––––––––––––––––\n\n"
             )
         else:
             gateway_info = (
-                f"🔍 Gateway Fetched Successfully ✅\n"
+                f"🔍 **Gateway Fetched Successfully** ✅\n"
                 f"━━━━━━━━━━━━━━\n"
-                f"[❃] URL: {url}\n"
-                f"[❃] Payment Gateways: {', '.join(result['gateways']) if result['gateways'] else 'None'}\n"
-                f"[❃] Captcha Detected: {result['captcha']}\n"
-                f"[❃] Cloudflare Detected: {result['cloudflare']}\n"
-                f"[❃] Payment Security Type: {result['payment_security']}\n"
-                f"[❃] CVV/CVC Requirement: {result['cvv']}\n"
-                f"[❃] Inbuilt Payment System: {result['inbuilt_payment']}\n"
-                f"[❃] Status Code: {result['status_code']}\n"
+                f"[❃] **URL:** {url}\n"
+                f"[❃] **Payment Gateways:** {', '.join(result['gateways']) if result['gateways'] else 'None'}\n"
+                f"[❃] **Captcha Detected:** {result['captcha']}\n"
+                f"[❃] **Cloudflare Detected:** {result['cloudflare']}\n"
+                f"[❃] **Payment Security Type:** {result['payment_security']}\n"
+                f"[❃] **CVV/CVC Requirement:** {result['cvv']}\n"
+                f"[❃] **Inbuilt Payment System:** {result['inbuilt_payment']}\n"
+                f"[❃] **Status Code:** {result['status_code']}\n"
                 f"––––––––––––––––––––\n\n"
             )
         
         results.append(gateway_info)
         
         # Update the message with all results processed so far
-        full_message = "🔍 Gateway Checker\n━━━━━━━━━━━━━━\n\n" + "".join(results)
+        full_message = f"**{message.text.split()[0]}**\n\n🔍 Gateway Checker\n━━━━━━━━━━━━━━\n\n" + "".join(results)
         
         try:
             await response.edit(full_message)
@@ -256,7 +263,7 @@ async def txt_command(client, message: Message):
         return
 
     total_urls = len(urls)
-    response = await message.reply(f"📊 Found {total_urls} URLs. Starting check...")
+    response = await message.reply(f"**{message.text.split()[0]}**\n\n📊 Found {total_urls} URLs. Starting check...")
 
     results = {gateway: [] for gateway in GATEWAYS.keys()}
     checked = 0
@@ -266,22 +273,23 @@ async def txt_command(client, message: Message):
             await asyncio.sleep(2)
             remaining = total_urls - checked
             status = (
-                "🔍 MASS CHECKER\n"
+                f"**{message.text.split()[0]}**\n\n"
+                "🔍 **MASS CHECKER**\n"
                 "━━━━━━━━━━━━━━\n"
-                f"📊 Total: {total_urls}\n"
-                f"✅ Checked: {checked}\n"
-                f"⏳ Remaining: {remaining}\n"
+                f"📊 **Total:** {total_urls}\n"
+                f"✅ **Checked:** {checked}\n"
+                f"⏳ **Remaining:** {remaining}\n"
                 f"━━━━━━━━━━━━━━\n"
-                f"💳 Stripe: {len(results['Stripe'])}\n"
-                f"🧠 Braintree: {len(results['Braintree'])}\n"
-                f"💰 PayPal: {len(results['PayPal'])}\n"
-                f"🛒 Shopify: {len(results['Shopify'])}\n"
-                f"🔐 Authorize.net: {len(results['Authorize.net'])}\n"
-                f"◻️ Square: {len(results['Square'])}\n"
-                f"🌐 Cybersource: {len(results['Cybersource'])}\n"
-                f"🔄 Eway: {len(results['Eway'])}\n"
-                f"🔢 NMI: {len(results['NMI'])}\n"
-                f"🛍️ WooCommerce: {len(results['WooCommerce'])}\n"
+                f"💳 **Stripe:** {len(results['Stripe'])}\n"
+                f"🧠 **Braintree:** {len(results['Braintree'])}\n"
+                f"💰 **PayPal:** {len(results['PayPal'])}\n"
+                f"🛒 **Shopify:** {len(results['Shopify'])}\n"
+                f"🔐 **Authorize.net:** {len(results['Authorize.net'])}\n"
+                f"◻️ **Square:** {len(results['Square'])}\n"
+                f"🌐 **Cybersource:** {len(results['Cybersource'])}\n"
+                f"🔄 **Eway:** {len(results['Eway'])}\n"
+                f"🔢 **NMI:** {len(results['NMI'])}\n"
+                f"🛍️ **WooCommerce:** {len(results['WooCommerce'])}\n"
             )
             try:
                 await response.edit(status)
@@ -303,30 +311,31 @@ async def txt_command(client, message: Message):
     # Send final results
     for gateway, urls in results.items():
         if urls:
-            result_text = f"🔍 {gateway} Hits\n━━━━━━━━━━━━━━\n" + "\n".join(urls)
+            result_text = f"🔍 **{gateway} Hits**\n━━━━━━━━━━━━━━\n" + "\n".join(urls)
             try:
                 await message.reply(result_text)
             except Exception as e:
                 # If message is too long, split it
                 chunks = [urls[i:i + 50] for i in range(0, len(urls), 50)]
                 for i, chunk in enumerate(chunks):
-                    chunk_text = f"🔍 {gateway} Hits (Part {i+1})\n━━━━━━━━━━━━━━\n" + "\n".join(chunk)
+                    chunk_text = f"🔍 **{gateway} Hits (Part {i+1})**\n━━━━━━━━━━━━━━\n" + "\n".join(chunk)
                     await message.reply(chunk_text)
 
     final_status = (
-        "✅ Check completed!\n"
+        f"**{message.text.split()[0]}**\n\n"
+        "✅ **Check completed!**\n"
         "━━━━━━━━━━━━━━\n"
-        f"📊 Total URLs: {total_urls}\n"
-        f"💳 Stripe: {len(results['Stripe'])}\n"
-        f"🧠 Braintree: {len(results['Braintree'])}\n"
-        f"💰 PayPal: {len(results['PayPal'])}\n"
-        f"🛒 Shopify: {len(results['Shopify'])}\n"
-        f"🔐 Authorize.net: {len(results['Authorize.net'])}\n"
-        f"◻️ Square: {len(results['Square'])}\n"
-        f"🌐 Cybersource: {len(results['Cybersource'])}\n"
-        f"🔄 Eway: {len(results['Eway'])}\n"
-        f"🔢 NMI: {len(results['NMI'])}\n"
-        f"🛍️ WooCommerce: {len(results['WooCommerce'])}"
+        f"📊 **Total URLs:** {total_urls}\n"
+        f"💳 **Stripe:** {len(results['Stripe'])}\n"
+        f"🧠 **Braintree:** {len(results['Braintree'])}\n"
+        f"💰 **PayPal:** {len(results['PayPal'])}\n"
+        f"🛒 **Shopify:** {len(results['Shopify'])}\n"
+        f"🔐 **Authorize.net:** {len(results['Authorize.net'])}\n"
+        f"◻️ **Square:** {len(results['Square'])}\n"
+        f"🌐 **Cybersource:** {len(results['Cybersource'])}\n"
+        f"🔄 **Eway:** {len(results['Eway'])}\n"
+        f"🔢 **NMI:** {len(results['NMI'])}\n"
+        f"🛍️ **WooCommerce:** {len(results['WooCommerce'])}"
     )
     await response.edit(final_status)
 
