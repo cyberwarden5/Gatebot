@@ -24,8 +24,8 @@ app = Client("gateway_checker_bot", api_id=API_ID, api_hash=API_HASH, bot_token=
 GATEWAYS = {
     "Stripe": [
         r"<script src=\"https://js.stripe.com/v3/\"></script>",
-        r"Stripe.setPublishableKey",
-        r"https://r.stripe.com/b"  # New Stripe detection script
+        r"<script src=\"https://r.stripe.com/b\"></script>",
+        r"Stripe.setPublishableKey"
     ],
     "Braintree": [
         r"<script src=\"https://js.braintreegateway.com/v2/braintree.js\"></script>",
@@ -71,14 +71,9 @@ registered_users = set()
 async def check_gateway(url):
     """
     Check a given URL for payment gateways and security features.
-    
-    This function performs advanced detection of payment gateways, Cloudflare,
-    captchas, and other security mechanisms by analyzing the HTML content,
-    JavaScript, and headers of the response.
     """
     try:
         async with aiohttp.ClientSession() as session:
-            # Ignore SSL verification
             async with session.get(url, ssl=False, timeout=10) as response:
                 html = await response.text()
                 status_code = response.status
@@ -91,7 +86,7 @@ async def check_gateway(url):
                     if any(re.search(pattern, html, re.IGNORECASE) for pattern in patterns):
                         gateways_found.append(gateway)
 
-                # Advanced Cloudflare detection
+                # Advanced detection methods
                 cloudflare_detected = "Yes" if any([
                     "cloudflare" in html.lower(),
                     "__cf_" in html,
@@ -99,7 +94,6 @@ async def check_gateway(url):
                     soup.find('a', href=re.compile(r'cloudflare.com'))
                 ]) else "No"
 
-                # Advanced Captcha detection
                 captcha_detected = "Yes" if any([
                     re.search(r"captcha|recaptcha|hcaptcha", html, re.IGNORECASE),
                     soup.find('div', class_=re.compile(r'g-recaptcha|h-captcha')),
@@ -107,17 +101,14 @@ async def check_gateway(url):
                     "hcaptcha" in html
                 ]) else "No"
 
-                # Payment security type detection
                 payment_security = "3D" if any([
                     "3d-secure" in html.lower(),
                     "three-d-secure" in html.lower(),
                     re.search(r"Cardinal\.setup", html)
                 ]) else "2D"
 
-                # CVV requirement detection
                 cvv_required = "Required" if re.search(r"cvv|cvc|security code", html, re.IGNORECASE) else "Not Required"
 
-                # Inbuilt payment system detection
                 inbuilt_payment = "Yes" if any([
                     re.search(r"checkout|payment", html, re.IGNORECASE),
                     soup.find('form', id=re.compile(r'checkout|payment', re.IGNORECASE))
@@ -143,30 +134,73 @@ async def check_gateway(url):
 async def start_command(client, message: Message):
     user_id = message.from_user.id
     if user_id not in registered_users:
-        await message.reply("🚫 You need to register first. Please use the /register command.")
+        start_text = (
+            "🌟 **Welcome to Gateway Checker Bot!** 🌟\n\n"
+            "🔐 To get started, please register using the /register command.\n\n"
+            "📝 After registration, you can:\n"
+            "• Check URLs with /chk\n"
+            "• Process bulk URLs with /txt\n"
+            "• Learn more with /about\n\n"
+            "🛡️ Stay secure and happy checking!"
+        )
+        await message.reply(start_text)
     else:
-        await message.reply("👋 Welcome back! Use /about to learn more about the bot.")
+        welcome_back = (
+            "🎉 **Welcome back!** 🎉\n\n"
+            "🔍 Ready to check some gateways?\n\n"
+            "📋 **Available Commands:**\n"
+            "• /chk - Check URLs\n"
+            "• /txt - Process bulk URLs\n"
+            "• /about - Bot information\n\n"
+            "💫 Let's get started!"
+        )
+        await message.reply(welcome_back)
 
 @app.on_message(filters.command("register"))
 async def register_command(client, message: Message):
     user_id = message.from_user.id
     if user_id not in registered_users:
         registered_users.add(user_id)
-        user_info = f"New user registered:\nName: {message.from_user.first_name}\nUsername: @{message.from_user.username}\nID: {user_id}"
+        user_info = (
+            "🆕 **New User Registration**\n"
+            f"👤 **Name:** {message.from_user.first_name}\n"
+            f"🔖 **Username:** @{message.from_user.username}\n"
+            f"🆔 **ID:** `{user_id}`"
+        )
         await client.send_message(ADMIN_ID, user_info)
-        await message.reply("✅ Registration successful! You can now use the bot.")
+        
+        success_msg = (
+            "✅ **Registration Successful!**\n\n"
+            "🎉 Welcome to Gateway Checker Bot!\n\n"
+            "📋 **Available Commands:**\n"
+            "• /chk - Check URLs\n"
+            "• /txt - Process bulk URLs\n"
+            "• /about - Bot information\n\n"
+            "🚀 Ready to start checking!"
+        )
+        await message.reply(success_msg)
     else:
-        await message.reply("You're already registered!")
+        already_reg = (
+            "ℹ️ **Already Registered**\n\n"
+            "You're already registered and can use all bot features!\n\n"
+            "Need help? Use /about for more information."
+        )
+        await message.reply(already_reg)
 
 @app.on_message(filters.command("about"))
 async def about_command(client, message: Message):
     about_text = (
-        "🔍 **Gateway Checker Bot**\n\n"
-        "This bot helps you check payment gateways for URLs.\n\n"
-        "Available commands:\n"
-        "• /chk - Check gateways for multiple URLs\n"
-        "• /txt - Check gateways from a text file\n\n"
-        "Supported gateways:\n"
+        "🔍 **Gateway Checker Bot**\n"
+        "━━━━━━━━━━━━━━\n\n"
+        "🤖 **Bot Features:**\n"
+        "• Multiple URL checking\n"
+        "• Bulk processing via text file\n"
+        "• Advanced gateway detection\n"
+        "• Security measure analysis\n\n"
+        "📋 **Commands:**\n"
+        "• /chk - Check URLs (up to 15)\n"
+        "• /txt - Process URLs from file\n\n"
+        "💳 **Supported Gateways:**\n"
         "• Stripe 💳\n"
         "• Braintree 🧠\n"
         "• Shopify 🛒\n"
@@ -177,7 +211,12 @@ async def about_command(client, message: Message):
         "• Eway 🔄\n"
         "• NMI 🔢\n"
         "• WooCommerce 🛍️\n\n"
-        "Happy checking! 🚀"
+        "🛡️ **Security Checks:**\n"
+        "• Cloudflare Protection\n"
+        "• Captcha Systems\n"
+        "• Payment Security Type\n"
+        "• CVV Requirements\n\n"
+        "🚀 Happy checking!"
     )
     await message.reply(about_text)
 
@@ -202,7 +241,7 @@ async def chk_command(client, message: Message):
         await message.reply("Please provide URLs to check.")
         return
 
-    response = await message.reply(f"**{message.text.split()[0]}**\n\n🔍 Gateway Checker\n━━━━━━━━━━━━━━")
+    response = await message.reply("🔍 **Gateway Checker**\n━━━━━━━━━━━━━━")
     results = []
 
     for url in urls:
@@ -233,7 +272,7 @@ async def chk_command(client, message: Message):
         results.append(gateway_info)
         
         # Update the message with all results processed so far
-        full_message = f"**{message.text.split()[0]}**\n\n🔍 Gateway Checker\n━━━━━━━━━━━━━━\n\n" + "".join(results)
+        full_message = "🔍 **Gateway Checker**\n━━━━━━━━━━━━━━\n\n" + "".join(results)
         
         try:
             await response.edit(full_message)
@@ -263,7 +302,7 @@ async def txt_command(client, message: Message):
         return
 
     total_urls = len(urls)
-    response = await message.reply(f"**{message.text.split()[0]}**\n\n📊 Found {total_urls} URLs. Starting check...")
+    response = await message.reply(f"📊 Found {total_urls} URLs. Starting check...")
 
     results = {gateway: [] for gateway in GATEWAYS.keys()}
     checked = 0
@@ -273,7 +312,6 @@ async def txt_command(client, message: Message):
             await asyncio.sleep(2)
             remaining = total_urls - checked
             status = (
-                f"**{message.text.split()[0]}**\n\n"
                 "🔍 **MASS CHECKER**\n"
                 "━━━━━━━━━━━━━━\n"
                 f"📊 **Total:** {total_urls}\n"
@@ -294,7 +332,6 @@ async def txt_command(client, message: Message):
             try:
                 await response.edit(status)
             except Exception:
-                # If edit fails, continue silently
                 pass
 
     update_task = asyncio.create_task(update_message())
@@ -315,14 +352,12 @@ async def txt_command(client, message: Message):
             try:
                 await message.reply(result_text)
             except Exception as e:
-                # If message is too long, split it
                 chunks = [urls[i:i + 50] for i in range(0, len(urls), 50)]
                 for i, chunk in enumerate(chunks):
                     chunk_text = f"🔍 **{gateway} Hits (Part {i+1})**\n━━━━━━━━━━━━━━\n" + "\n".join(chunk)
                     await message.reply(chunk_text)
 
     final_status = (
-        f"**{message.text.split()[0]}**\n\n"
         "✅ **Check completed!**\n"
         "━━━━━━━━━━━━━━\n"
         f"📊 **Total URLs:** {total_urls}\n"
