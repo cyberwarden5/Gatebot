@@ -418,11 +418,11 @@ async def detect_captcha(html, soup):
 
 async def detect_platform(html, headers, soup):
     async def detect_platform(html, headers, soup):
-    """
-    Advanced platform detection
-    """
-    detected_platforms = []
-    platform_details = {}
+        """
+        Advanced platform detection
+        """
+        detected_platforms = []
+        platform_details = {}
 
     for platform, patterns in PLATFORMS.items():
         if any(re.search(pattern, html, re.IGNORECASE) for pattern in patterns):
