@@ -854,20 +854,24 @@ async def txt_command(client, message: Message):
     # Send final results
     for gateway, urls in results.items():
         if urls:
+            # Fix the string formatting to avoid backslashes in f-strings
+            url_list = '\n'.join(f'`{url}`' for url in urls)
             result_text = (
                 f"🔍 **{gateway} Hits**\n"
                 f"━━━━━━━━━━━━━━\n"
-                f"`{'`\n`'.join(urls)}`"
+                f"{url_list}"
             )
             try:
                 await message.reply(result_text, reply_to_message_id=message.id)
             except Exception:
+                # Handle long messages by splitting into chunks
                 chunks = [urls[i:i + 50] for i in range(0, len(urls), 50)]
                 for i, chunk in enumerate(chunks):
+                    chunk_list = '\n'.join(f'`{url}`' for url in chunk)
                     chunk_text = (
-                                                f"🔍 **{gateway} Hits (Part {i+1})**\n"
+                        f"🔍 **{gateway} Hits (Part {i+1})**\n"
                         f"━━━━━━━━━━━━━━\n"
-                        f"`{'`\n`'.join(chunk)}`"
+                        f"{chunk_list}"
                     )
                     await message.reply(chunk_text, reply_to_message_id=message.id)
 
