@@ -865,7 +865,7 @@ async def txt_command(client, message: Message):
                 chunks = [urls[i:i + 50] for i in range(0, len(urls), 50)]
                 for i, chunk in enumerate(chunks):
                     chunk_text = (
-                        f"🔍 **{gateway} Hits (Part {i+1})**\n"
+                                                f"🔍 **{gateway} Hits (Part {i+1})**\n"
                         f"━━━━━━━━━━━━━━\n"
                         f"`{'`\n`'.join(chunk)}`"
                     )
@@ -888,4 +888,3 @@ async def txt_command(client, message: Message):
 
 # Run the bot
 app.run()
-
