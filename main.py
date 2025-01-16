@@ -417,12 +417,11 @@ async def detect_captcha(html, soup):
     return captcha_info
 
 async def detect_platform(html, headers, soup):
-    async def detect_platform(html, headers, soup):
-        """
-        Advanced platform detection
-        """
-        detected_platforms = []
-        platform_details = {}
+    """
+    Advanced platform detection
+    """
+    detected_platforms = []
+    platform_details = {}
 
     for platform, patterns in PLATFORMS.items():
         if any(re.search(pattern, html, re.IGNORECASE) for pattern in patterns):
@@ -854,25 +853,24 @@ async def txt_command(client, message: Message):
 
     # Send final results
     for gateway, urls in results.items():
-    if urls:
-        result_text = (
-            f"🔍 **{gateway} Hits**\n"
-            f"━━━━━━━━━━━━━━\n"
-            f"`{'`\n`'.join(urls)}`"
-        )
-        try:
-            await message.reply(result_text, reply_to_message_id=message.id)
-        except Exception:
-            chunks = [urls[i:i + 50] for i in range(0, len(urls), 50)]
-            for i, chunk in enumerate(chunks):
-                chunk_text = (
-                    f"🔍 **{gateway} Hits (Part {i+1})**\n"
-                    f"━━━━━━━━━━━━━━\n"
-                    f"`{'`\n`'.join(chunk)}`"
-                )
-                await message.reply(chunk_text, reply_to_message_id=message.id)
+        if urls:
+            result_text = (
+                f"🔍 **{gateway} Hits**\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"`{'`\n`'.join(urls)}`"
+            )
+            try:
+                await message.reply(result_text, reply_to_message_id=message.id)
+            except Exception:
+                chunks = [urls[i:i + 50] for i in range(0, len(urls), 50)]
+                for i, chunk in enumerate(chunks):
+                    chunk_text = (
+                        f"🔍 **{gateway} Hits (Part {i+1})**\n"
+                        f"━━━━━━━━━━━━━━\n"
+                        f"`{'`\n`'.join(chunk)}`"
+                    )
+                    await message.reply(chunk_text, reply_to_message_id=message.id)
 
-    
     final_status = (
         "✅ **Check completed!**\n"
         "━━━━━━━━━━━━━━\n"
