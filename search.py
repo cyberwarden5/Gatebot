@@ -8,8 +8,10 @@ logger = logging.getLogger(__name__)
 
 async def search_command(client, message: Message):
     if message.from_user.id not in client.registered_users:
-        await message.reply("🚫 You need to register first. Please use the /register command.", 
-                          reply_to_message_id=message.id)
+        await message.reply(
+            "🚫 You need to register first. Please use the /register command.", 
+            reply_to_message_id=message.id
+        )
         return
 
     try:
@@ -27,7 +29,7 @@ async def search_command(client, message: Message):
             return
 
         query = args[1]
-        amount = 10  # Default amount
+        amount = 10  # Default number of results
 
         if len(args) == 3:
             try:
@@ -37,7 +39,7 @@ async def search_command(client, message: Message):
             except ValueError:
                 amount = 10
 
-        # Send initial status
+        # Send initial status message
         status_msg = await message.reply(
             "🔍 **Searching URLs...**\n"
             "Please wait...",
@@ -54,8 +56,9 @@ async def search_command(client, message: Message):
             )
             return
 
-        # Format results
+        # Process and send results
         if amount <= 10:
+            # Directly display results if the number is manageable
             result_text = (
                 f"🔍 **Search Results**\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -69,29 +72,31 @@ async def search_command(client, message: Message):
                 result_text += f"`{i}. {url}`\n"
 
             result_text += "\n━━━━━━━━━━━━━━━━━━━━"
-
             await status_msg.edit(result_text)
         else:
-            # Create a text file with URLs
+            # If results exceed 10, save to a file
             file_name = f"search_results_{message.from_user.id}.txt"
             with open(file_name, "w") as f:
                 for url in urls:
                     f.write(f"{url}\n")
 
-            # Send the file
+            # Send the file as a document
             await message.reply_document(
                 document=file_name,
-                caption=f"🔍 **Search Results**\n"
-                        f"━━━━━━━━━━━━━━━━━━━━\n"
-                        f"🔎 **Query:** `{query}`\n"
-                        f"📊 **Found:** `{len(urls)}` URLs\n"
-                        f"━━━━━━━━━━━━━━━━━━━━",
+                caption=(
+                    f"🔍 **Search Results**\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"🔎 **Query:** `{query}`\n"
+                    f"📊 **Found:** `{len(urls)}` URLs\n"
+                    f"━━━━━━━━━━━━━━━━━━━━"
+                ),
                 reply_to_message_id=message.id
             )
 
             # Delete the temporary file
             os.remove(file_name)
 
+            # Delete the status message
             await status_msg.delete()
 
     except Exception as e:
@@ -100,4 +105,3 @@ async def search_command(client, message: Message):
             f"❌ **Error:**\n`{str(e)}`",
             reply_to_message_id=message.id
         )
-
