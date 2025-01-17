@@ -130,7 +130,7 @@ async def about_command(client, message: Message):
 
 # Register command handlers
 app.add_handler(filters.command("search"), search_command)
-app.add_handler(filters.command("txt") & filters.reply, txt_command)
+app.add_handler(filters.command("txt"), txt_command)
 app.add_handler(filters.command("chk"), chk_command)
 
 if __name__ == "__main__":
