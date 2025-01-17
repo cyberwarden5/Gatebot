@@ -128,10 +128,16 @@ async def check_gateway(url):
 
             async with session.get(url, ssl=False, timeout=15, headers=headers) as response:
                 content = await response.read()
-                if response.headers.get('Content-Encoding') == 'br':
-                    html = brotli.decompress(content).decode('utf-8')
-                else:
-                    html = content.decode('utf-8')
+                try:
+                    if response.headers.get('Content-Encoding') == 'br':
+                        html = brotli.decompress(content).decode('utf-8')
+                    else:
+                        html = content.decode('utf-8')
+                except brotli.error:
+                    return {"error": "Failed to decompress Brotli-encoded content"}
+                except UnicodeDecodeError:
+                    return {"error": "Failed to decode content"}
+
                 status_code = response.status
 
                 # Gateway detection
@@ -257,11 +263,11 @@ async def search_command(client, message: Message):
     try:
         # Parse command arguments
         args = message.text.split(None, 2)
-        if len(args) < 3:
+        if len(args) < 2:
             await message.reply(
                 "❌ **Invalid Format!**\n\n"
                 "📝 **Usage:**\n"
-                "`/search <query> <amount>`\n\n"
+                "`/search <query> [amount]`\n\n"
                 "📌 **Example:**\n"
                 "`/search intext:\"payment\" 10`",
                 reply_to_message_id=message.id
@@ -269,12 +275,15 @@ async def search_command(client, message: Message):
             return
 
         query = args[1]
-        try:
-            amount = int(args[2])
-            if amount > 50:
-                amount = 50
-        except ValueError:
-            amount = 10
+        amount = 10  # Default amount
+
+        if len(args) == 3:
+            try:
+                amount = int(args[2])
+                if amount < 1:
+                    amount = 10
+            except ValueError:
+                amount = 10
 
         # Send initial status
         status_msg = await message.reply(
@@ -294,21 +303,44 @@ async def search_command(client, message: Message):
             return
 
         # Format results
-        result_text = (
-            f"🔍 **Search Results**\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"🔎 **Query:** `{query}`\n"
-            f"📊 **Found:** `{len(urls)}` URLs\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"📋 **URLs List:**\n"
-        )
+        if amount <= 10:
+            result_text = (
+                f"🔍 **Search Results**\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"🔎 **Query:** `{query}`\n"
+                f"📊 **Found:** `{len(urls)}` URLs\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"📋 **URLs List:**\n"
+            )
 
-        for i, url in enumerate(urls, 1):
-            result_text += f"`{i}. {url}`\n"
+            for i, url in enumerate(urls, 1):
+                result_text += f"`{i}. {url}`\n"
 
-        result_text += "\n━━━━━━━━━━━━━━━━━━━━"
+            result_text += "\n━━━━━━━━━━━━━━━━━━━━"
 
-        await status_msg.edit(result_text)
+            await status_msg.edit(result_text)
+        else:
+            # Create a text file with URLs
+            file_name = f"search_results_{message.from_user.id}.txt"
+            with open(file_name, "w") as f:
+                for url in urls:
+                    f.write(f"{url}\n")
+
+            # Send the file
+            await message.reply_document(
+                document=file_name,
+                caption=f"🔍 **Search Results**\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                        f"🔎 **Query:** `{query}`\n"
+                        f"📊 **Found:** `{len(urls)}` URLs\n"
+                        f"━━━━━━━━━━━━━━━━━━━━",
+                reply_to_message_id=message.id
+            )
+
+            # Delete the temporary file
+            os.remove(file_name)
+
+            await status_msg.delete()
 
     except Exception as e:
         await message.reply(
