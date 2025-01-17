@@ -10,13 +10,13 @@ logger = logging.getLogger(__name__)
 async def txt_command(client, message: Message):
     if message.from_user.id not in client.registered_users:
         await message.reply("🚫 You need to register first. Please use the /register command.", 
-                          reply_to_message_id=message.id)
+                            reply_to_message_id=message.id)
         return
 
     replied_message = message.reply_to_message
-    if not replied_message.document or not replied_message.document.file_name.endswith('.txt'):
+    if not replied_message or not replied_message.document or not replied_message.document.file_name.endswith('.txt'):
         await message.reply("❌ Please reply to a .txt file containing URLs.", 
-                          reply_to_message_id=message.id)
+                            reply_to_message_id=message.id)
         return
 
     file = await replied_message.download()
@@ -27,7 +27,7 @@ async def txt_command(client, message: Message):
 
     if not urls:
         await message.reply("❌ No valid URLs found in the file.", 
-                          reply_to_message_id=message.id)
+                            reply_to_message_id=message.id)
         return
 
     total_urls = len(urls)
@@ -119,4 +119,3 @@ async def txt_command(client, message: Message):
 
     final_status += "━━━━━━━━━━━━━━"
     await response.edit(final_status)
-
