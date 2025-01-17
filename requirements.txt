@@ -1,5 +1,8 @@
 pyrogram==2.0.106
-aiohttp
-beautifulsoup4
+aiohttp==3.8.5
+beautifulsoup4==4.13.0
 urllib3==1.26.16
+brotli==1.0.9
+google==3.0.0
+
 
