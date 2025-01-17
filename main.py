@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # Bot configuration
@@ -70,7 +70,7 @@ async def register_command(client, message: Message):
             "🆕 **New User Registration**\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
             f"👤 **Name:** {message.from_user.first_name}\n"
-            f"🔖 **Username:** @{message.from_user.username}\n"
+            f"🔖 **Username:** @{message.from_user.username or 'N/A'}\n"
             f"🆔 **ID:** `{user_id}`\n"
             "━━━━━━━━━━━━━━━━━━━━"
         )
@@ -136,4 +136,3 @@ app.add_handler(filters.command("chk"), chk_command)
 if __name__ == "__main__":
     logger.info("🚀 Starting Gateway Checker Bot...")
     app.run()
-
