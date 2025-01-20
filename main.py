@@ -8,7 +8,9 @@ import warnings
 from urllib3.exceptions import InsecureRequestWarning
 from bs4 import BeautifulSoup
 from googlesearch import search
-import brotli
+#import brotli
+import cloudscraper
+import shlex
 
 # Suppress SSL verification warnings
 warnings.simplefilter('ignore', InsecureRequestWarning)
@@ -240,75 +242,53 @@ registered_users = set()
 
 async def check_gateway(url):
     """
-    Enhanced gateway checking with advanced detection methods
+    Enhanced gateway checking with advanced detection methods using cloudscraper
     """
     try:
-        async with aiohttp.ClientSession() as session:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'DNT': '1',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-            }
+        scraper = cloudscraper.create_scraper()
+        response = scraper.get(url, timeout=15)
 
-            async with session.get(url, ssl=False, timeout=15, headers=headers) as response:
-                content = await response.read()
-                try:
-                    if response.headers.get('Content-Encoding') == 'br':
-                        html = brotli.decompress(content).decode('utf-8')
-                    else:
-                        html = content.decode('utf-8')
-                except brotli.error:
-                    return {"error": "Failed to decompress Brotli-encoded content"}
-                except UnicodeDecodeError:
-                    return {"error": "Failed to decode content"}
+        html = response.text
+        status_code = response.status_code
 
-                status_code = response.status
+        # Gateway detection
+        gateways_found = []
+        for gateway, patterns in GATEWAYS.items():
+            if any(re.search(pattern, html, re.IGNORECASE) for pattern in patterns):
+                gateways_found.append(gateway)
 
-                # Gateway detection
-                gateways_found = []
-                for gateway, patterns in GATEWAYS.items():
-                    if any(re.search(pattern, html, re.IGNORECASE) for pattern in patterns):
-                        gateways_found.append(gateway)
+        # Captcha detection
+        captcha_detected = False
+        captcha_types = []
+        for captcha_type, patterns in CAPTCHA_TYPES.items():
+            if any(re.search(pattern, html, re.IGNORECASE) for pattern in patterns):
+                captcha_detected = True
+                captcha_types.append(captcha_type)
 
-                # Captcha detection
-                captcha_detected = False
-                captcha_types = []
-                for captcha_type, patterns in CAPTCHA_TYPES.items():
-                    if any(re.search(pattern, html, re.IGNORECASE) for pattern in patterns):
-                        captcha_detected = True
-                        captcha_types.append(captcha_type)
+        # Cloudflare detection
+        cloudflare_detected = bool(re.search(r"cloudflare", html, re.IGNORECASE))
 
-                # Cloudflare detection
-                cloudflare_detected = bool(re.search(r"cloudflare", html, re.IGNORECASE))
+        # Payment security types (simplified check)
+        payment_security = []
+        if re.search(r"3D(-|\s)?Secure", html, re.IGNORECASE):
+            payment_security.append("3D Secure")
+        if re.search(r"CVV|CVC|Security Code", html, re.IGNORECASE):
+            payment_security.append("CVV Required")
 
-                # Payment security types (simplified check)
-                payment_security = []
-                if re.search(r"3D(-|\s)?Secure", html, re.IGNORECASE):
-                    payment_security.append("3D Secure")
-                if re.search(r"CVV|CVC|Security Code", html, re.IGNORECASE):
-                    payment_security.append("CVV Required")
+        return {
+            "status_code": status_code,
+            "gateways": gateways_found,
+            "captcha": {
+                "detected": captcha_detected,
+                "types": captcha_types
+            },
+            "cloudflare": cloudflare_detected,
+            "payment_security": payment_security,
+        }
 
-                return {
-                    "status_code": status_code,
-                    "gateways": gateways_found,
-                    "captcha": {
-                        "detected": captcha_detected,
-                        "types": captcha_types
-                    },
-                    "cloudflare": cloudflare_detected,
-                    "payment_security": payment_security,
-                }
-
-    except asyncio.TimeoutError:
-        return {"error": "🕒 Connection timeout"}
-    except aiohttp.ClientError as e:
-        return {"error": f"🔌 Connection error: {str(e)}"}
     except Exception as e:
         return {"error": f"❌ Unexpected error: {str(e)}"}
+
 
 @app.on_message(filters.command("start"))
 async def start_command(client, message: Message):
@@ -381,6 +361,8 @@ async def register_command(client, message: Message):
         )
         await message.reply(already_reg, reply_to_message_id=message.id)
 
+#import shlex
+
 @app.on_message(filters.command("search"))
 async def search_command(client, message: Message):
     if message.from_user.id not in registered_users:
@@ -390,7 +372,7 @@ async def search_command(client, message: Message):
 
     try:
         # Parse command arguments
-        args = message.text.split(None, 2)
+        args = shlex.split(message.text)
         if len(args) < 2:
             await message.reply(
                 "❌ **Invalid Format!**\n\n"
@@ -475,6 +457,7 @@ async def search_command(client, message: Message):
             f"❌ **Error:**\n`{str(e)}`",
             reply_to_message_id=message.id
         )
+
 
 @app.on_message(filters.command("about"))
 async def about_command(client, message: Message):
