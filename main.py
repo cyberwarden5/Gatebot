@@ -8,7 +8,6 @@ import warnings
 from urllib3.exceptions import InsecureRequestWarning
 from bs4 import BeautifulSoup
 from googlesearch import search
-#import brotli
 import cloudscraper
 import shlex
 
@@ -33,7 +32,7 @@ GATEWAYS = {
         r"stripe\.com/v\d/payment_intents",
         r"checkout\.stripe\.com",
         r"stripe\.com/v\d/elements",
-        r"Stripe$$(['\"](pk_live|pk_test)_[0-9a-zA-Z]+['\"]$$",
+        r"Stripe(['\"](pk_live|pk_test)_[0-9a-zA-Z]+['\"]",
         r"stripe\.createToken",
         r"stripe\.confirmCardPayment",
         r"stripe\.handleCardPayment",
@@ -68,7 +67,7 @@ GATEWAYS = {
         r"braintree-hosted-fields-valid"
     ],
     "PayPal": [
-        r"paypal\.com/sdk/js",
+        r"paypal\.com/sdk/js(?:\?|\&)",
         r"<script[^>]*src=['\"]https?://www\.paypalobjects\.com/[^'\"]+['\"]",
         r"paypal\.Buttons",
         r"paypal-button",
@@ -83,7 +82,7 @@ GATEWAYS = {
         r"paypal\.Orders\.create"
     ],
     "Square": [
-        r"squareup\.com/payments",
+        r"squareup\.com/payments(?:[^\w])",
         r"square\.com/js/sq-payment-form",
         r"SqPaymentForm",
         r"square-payment-form",
@@ -94,7 +93,7 @@ GATEWAYS = {
         r"square-button"
     ],
     "Amazon Pay": [
-        r"payments\.amazon\.",
+        r"amazon\.(payments|pay)\.",
         r"payments-amazon\.",
         r"amazonpayments\.",
         r"amazon\.Pay\.renderButton",
@@ -124,7 +123,7 @@ GATEWAYS = {
         r"data-adyen"
     ],
     "Authorize.net": [
-        r"accept\.authorize\.net",
+        r"accept(?:\.authorize\.net|\.js|\.ui)",
         r"acceptjs\.authorize\.net",
         r"AcceptUI",
         r"accept\.js",
@@ -138,13 +137,13 @@ GATEWAYS = {
         r"worldpay\.js",
         r"worldpay-js",
         r"WorldpayHOP",
-        r"worldpay\.setup",
+        r"worldpay\.setup|worldpay\.js",
         r"data-worldpay",
         r"worldpay-payment"
     ],
     "Cybersource": [
         r"cybersource\.com",
-        r"cybersource\.min\.js",
+        r"cybersource(?:\.min|\.js)",
         r"cybersource/checkout",
         r"cybs",
         r"cybersource-flex",
@@ -152,7 +151,7 @@ GATEWAYS = {
         r"data-cybersource"
     ],
     "2Checkout": [
-        r"2checkout\.com",
+        r"2checkout\.(com|js)",
         r"2co\.com",
         r"2checkout\.js",
         r"2co_signature",
@@ -161,7 +160,7 @@ GATEWAYS = {
         r"2checkout-token"
     ],
     "Eway": [
-        r"eway\.com\.au",
+        r"eway\.(com\.au|com)",
         r"eWAY",
         r"eway\.rapidapi"
     ],
@@ -173,7 +172,7 @@ GATEWAYS = {
     "WooCommerce": [
         r"woocommerce",
         r"WC_AJAX",
-        r"wc-payment"
+        r"wc-(payment|ajax)"
     ]
 }
 
@@ -246,7 +245,7 @@ async def check_gateway(url):
     """
     try:
         scraper = cloudscraper.create_scraper()
-        response = scraper.get(url, timeout=15)
+        response = await asyncio.to_thread(scraper.get, url, timeout=15)
 
         html = response.text
         status_code = response.status_code
@@ -323,6 +322,7 @@ async def start_command(client, message: Message):
         )
         await message.reply(welcome_back, reply_to_message_id=message.id)
 
+
 @app.on_message(filters.command("register"))
 async def register_command(client, message: Message):
     user_id = message.from_user.id
@@ -361,7 +361,6 @@ async def register_command(client, message: Message):
         )
         await message.reply(already_reg, reply_to_message_id=message.id)
 
-#import shlex
 
 @app.on_message(filters.command("search"))
 async def search_command(client, message: Message):
@@ -378,8 +377,10 @@ async def search_command(client, message: Message):
                 "❌ **Invalid Format!**\n\n"
                 "📝 **Usage:**\n"
                 "`/search <query> [amount]`\n\n"
-                "📌 **Example:**\n"
-                "`/search intext:\"payment\" 10`",
+                "📌 **Examples:**\n"
+                "`/search intext:\"payment\" 10`\n"
+                "`/search site:example.com 5`\n"
+                "`/search \"payment gateway\"`",
                 reply_to_message_id=message.id
             )
             return
@@ -488,6 +489,7 @@ async def about_command(client, message: Message):
     )
     await message.reply(about_text, reply_to_message_id=message.id)
 
+
 @app.on_message(filters.command("chk"))
 async def chk_command(client, message: Message):
     if message.from_user.id not in registered_users:
@@ -505,8 +507,15 @@ async def chk_command(client, message: Message):
     urls = re.findall(r'https?://\S+', text)
 
     if not urls:
-        await message.reply("❌ Please provide URLs to check.", 
-                          reply_to_message_id=message.id)
+        await message.reply(
+            "❌ **No URLs Provided!**\n\n"
+            "📝 **Usage:**\n"
+            "`/chk <URL1> <URL2> ...`\n\n"
+            "📌 **Examples:**\n"
+            "`/chk https://example.com`\n"
+            "`/chk https://example1.com https://example2.com`",
+            reply_to_message_id=message.id
+        )
         return
 
     if len(urls) > 15:
@@ -552,6 +561,7 @@ async def chk_command(client, message: Message):
             response = await message.reply(full_message, 
                                         reply_to_message_id=message.id)
 
+
 @app.on_message(filters.command("txt") & filters.reply)
 async def txt_command(client, message: Message):
     if message.from_user.id not in registered_users:
@@ -561,8 +571,17 @@ async def txt_command(client, message: Message):
 
     replied_message = message.reply_to_message
     if not replied_message.document or not replied_message.document.file_name.endswith('.txt'):
-        await message.reply("❌ Please reply to a .txt file containing URLs.", 
-                          reply_to_message_id=message.id)
+        await message.reply(
+            "❌ **Invalid File!**\n\n"
+            "📝 **Usage:**\n"
+            "Reply to a `.txt` file containing URLs (one per line).\n\n"
+            "📌 **Example:**\n"
+            "1. Create a file `urls.txt` with URLs:\n"
+            "`https://example1.com`\n"
+            "`https://example2.com`\n"
+            "2. Reply to the file with `/txt`",
+            reply_to_message_id=message.id
+        )
         return
 
     file = await replied_message.download()
