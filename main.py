@@ -31,10 +31,10 @@ GATEWAYS = {
         r"stripe\.com/v\d/tokens",
         r"stripe\.com/v\d/payment_intents",
         r"checkout\.stripe\.com",
+        r"stripe\.com/v\d/elements",
         r"Stripe\(['\"](?:pk_live|pk_test)_[0-9a-zA-Z]+['\"]",
-        r"stripe\.createToken",
         r"stripe\.createPaymentMethod",
-        r"data-stripe=['\"][^'\"]+['\"]", 
+        r"data-stripe=['\"][^'\"]+['\"]",
     ],
     "Braintree": [
         r"<script[^>]*src=['\"]https?://js\.braintreegateway\.com/[^'\"]+['\"]",
@@ -227,6 +227,11 @@ async def check_gateway(url):
     Enhanced gateway checking with advanced detection methods using cloudscraper
     """
     try:
+        # Create a custom SSL context
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+
         scraper = cloudscraper.create_scraper(
             browser={
                 'browser': 'chrome',
@@ -234,16 +239,35 @@ async def check_gateway(url):
                 'mobile': False
             }
         )
-        response = await asyncio.to_thread(scraper.get, url, timeout=15, verify=False)
+        
+        # Set SSL verification to False and use the custom SSL context
+        response = await asyncio.to_thread(
+            lambda: scraper.get(
+                url,
+                timeout=15,
+                verify=False,
+                ssl_context=ssl_context
+            )
+        )
 
         html = response.text
         status_code = response.status_code
 
-        # Gateway detection
+        # Gateway detection with enhanced visual indicators
         gateways_found = []
         for gateway, patterns in GATEWAYS.items():
             if any(re.search(pattern, html, re.IGNORECASE) for pattern in patterns):
                 gateways_found.append(gateway)
+
+        # Enhanced status indicators
+        status_indicators = {
+            200: "✅",
+            403: "⚠️",
+            404: "❌",
+            500: "⛔",
+            503: "⚡"
+        }
+        status_icon = status_indicators.get(status_code, "ℹ️")
 
         # Improved Captcha detection
         captcha_detected = False
@@ -258,26 +282,33 @@ async def check_gateway(url):
                               'cf-ray' in response.headers or \
                               any('cloudflare' in header.lower() for header in response.headers)
 
-        # Payment security types (simplified check)
-        payment_security = []
+        # Enhanced security checks
+        security_features = []
         if re.search(r"3D(-|\s)?Secure", html, re.IGNORECASE):
-            payment_security.append("3D Secure")
+            security_features.append("🔒 3D Secure")
         if re.search(r"CVV|CVC|Security Code", html, re.IGNORECASE):
-            payment_security.append("CVV Required")
+            security_features.append("🔑 CVV Required")
+        if re.search(r"ssl|tls|https", html, re.IGNORECASE):
+            security_features.append("🔐 SSL/TLS")
+        if re.search(r"encryption|encrypted", html, re.IGNORECASE):
+            security_features.append("🛡️ Encryption")
+        if re.search(r"firewall", html, re.IGNORECASE):
+            security_features.append("🧱 Firewall")
 
         return {
             "status_code": status_code,
+            "status_icon": status_icon,
             "gateways": gateways_found,
             "captcha": {
                 "detected": captcha_detected,
                 "types": captcha_types
             },
             "cloudflare": cloudflare_detected,
-            "payment_security": payment_security,
+            "security_features": security_features,
         }
 
     except Exception as e:
-        return {"error": f"❌ Unexpected error: {str(e)}"}
+        return {"error": f"❌ Error: {str(e)}"}
 
 
 @app.on_message(filters.command("start"))
@@ -549,19 +580,18 @@ async def chk_command(client, message: Message):
         if "error" in result:
             gateway_info = (
                 f"🔍 Error Checking Gateway ❌\n"
-                f"URL: {url}\n"
-                f"Error: {result['error']}\n\n"
+                f"🌐 URL: {url}\n"
+                f"⚠️ Error: {result['error']}\n\n"
             )
         else:
             gateway_info = (
-                f"🔍 Gateway Fetched Successfully ✅\n"
-                f"URL: {url}\n"
-                f"Payment Gateways: {', '.join(result['gateways']) if result['gateways'] else 'None'}\n"
-                f"Captcha Detected: {'⚠️ Yes' if result['captcha']['detected'] else 'No'}\n"
-                f"Captcha Types: {', '.join(result['captcha']['types']) if result['captcha']['detected'] else 'N/A'}\n"
-                f"Cloudflare: {'⚡ Yes' if result['cloudflare'] else 'No'}\n"
-                f"Payment Security: {', '.join(result['payment_security']) if result['payment_security'] else 'None detected'}\n"
-                f"Status Code: {result['status_code']}\n\n"
+                f"🔍 Gateway Check {result['status_icon']}\n"
+                f"🌐 URL: {url}\n"
+                f"💳 Payment Gateways: {', '.join(result['gateways']) if result['gateways'] else '❌ None'}\n"
+                f"🤖 Captcha: {('⚠️ Yes - ' + ', '.join(result['captcha']['types'])) if result['captcha']['detected'] else '✅ No'}\n"
+                f"⚡ Cloudflare: {'✅ Yes' if result['cloudflare'] else '❌ No'}\n"
+                f"🛡️ Security: {', '.join(result['security_features']) if result['security_features'] else '❌ None detected'}\n"
+                f"📊 Status Code: {result['status_code']} {result['status_icon']}\n\n"
             )
         
         results.append(gateway_info)
@@ -720,3 +750,4 @@ async def ban_command(client, message: Message):
 
 # Run the bot
 app.run()
+
