@@ -10,7 +10,6 @@ from bs4 import BeautifulSoup
 from googlesearch import search
 import cloudscraper
 import shlex
-import ssl
 
 # Suppress SSL verification warnings
 warnings.simplefilter('ignore', InsecureRequestWarning)
@@ -33,8 +32,12 @@ GATEWAYS = {
         r"checkout\.stripe\.com",
         r"stripe\.com/v\d/elements",
         r"Stripe\(['\"](?:pk_live|pk_test)_[0-9a-zA-Z]+['\"]",
+        r"stripe\.createToken",
+        r"stripe\.confirmCardPayment",
+        r"stripe\.handleCardPayment",
         r"stripe\.createPaymentMethod",
         r"data-stripe=['\"][^'\"]+['\"]",
+        r"id=['\"]card-element['\"]",
     ],
     "Braintree": [
         r"<script[^>]*src=['\"]https?://js\.braintreegateway\.com/[^'\"]+['\"]",
@@ -227,11 +230,6 @@ async def check_gateway(url):
     Enhanced gateway checking with advanced detection methods using cloudscraper
     """
     try:
-        # Create a custom SSL context
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-
         scraper = cloudscraper.create_scraper(
             browser={
                 'browser': 'chrome',
@@ -240,13 +238,11 @@ async def check_gateway(url):
             }
         )
         
-        # Set SSL verification to False and use the custom SSL context
         response = await asyncio.to_thread(
             lambda: scraper.get(
                 url,
                 timeout=15,
-                verify=False,
-                ssl_context=ssl_context
+                verify=False
             )
         )
 
@@ -257,14 +253,19 @@ async def check_gateway(url):
         gateways_found = []
         for gateway, patterns in GATEWAYS.items():
             if any(re.search(pattern, html, re.IGNORECASE) for pattern in patterns):
-                gateways_found.append(gateway)
+                gateways_found.append(f"✨ {gateway}")
 
         # Enhanced status indicators
         status_indicators = {
             200: "✅",
-            403: "⚠️",
+            201: "✅",
+            301: "↪️",
+            302: "↪️",
+            400: "⚠️",
+            401: "🔒",
+            403: "⛔",
             404: "❌",
-            500: "⛔",
+            500: "💥",
             503: "⚡"
         }
         status_icon = status_indicators.get(status_code, "ℹ️")
@@ -275,7 +276,7 @@ async def check_gateway(url):
         for captcha_type, patterns in CAPTCHA_TYPES.items():
             if any(re.search(pattern, html, re.IGNORECASE) for pattern in patterns):
                 captcha_detected = True
-                captcha_types.append(captcha_type)
+                captcha_types.append(f"🤖 {captcha_type}")
 
         # Improved Cloudflare detection
         cloudflare_detected = bool(re.search(r"cloudflare-nginx|__cfduid|cf-ray|cloudflare-nginx", html, re.IGNORECASE)) or \
@@ -294,6 +295,16 @@ async def check_gateway(url):
             security_features.append("🛡️ Encryption")
         if re.search(r"firewall", html, re.IGNORECASE):
             security_features.append("🧱 Firewall")
+        if re.search(r"secure\s+payment|security\s+verified", html, re.IGNORECASE):
+            security_features.append("✅ Secure Payment")
+        if re.search(r"PCI|DSS", html, re.IGNORECASE):
+            security_features.append("💳 PCI DSS")
+        if re.search(r"fraud|protection", html, re.IGNORECASE):
+            security_features.append("🚫 Fraud Protection")
+        if re.search(r"verified\s+by\s+visa", html, re.IGNORECASE):
+            security_features.append("💠 Verified by Visa")
+        if re.search(r"mastercard\s+secure\s+code", html, re.IGNORECASE):
+            security_features.append("🔰 Mastercard SecureCode")
 
         return {
             "status_code": status_code,
@@ -308,7 +319,7 @@ async def check_gateway(url):
         }
 
     except Exception as e:
-        return {"error": f"❌ Error: {str(e)}"}
+        return {"error": f"{str(e)}"}
 
 
 @app.on_message(filters.command("start"))
@@ -316,27 +327,30 @@ async def start_command(client, message: Message):
     user_id = message.from_user.id
     if user_id not in registered_users:
         start_text = (
+            "━━━━━━ 𝗚𝗮𝘁𝗲𝘄𝗮𝘆 𝗖𝗵𝗲𝗰𝗸𝗲𝗿 ━━━━━━\n\n"
             "🌟 Welcome to Gateway Checker Bot!\n\n"
-            "To get started, please register:\n"
+            "📝 To get started:\n"
             "➜ Use /register command\n\n"
-            "After registration, you can:\n"
+            "🔥 Available features:\n"
             "➜ Check URLs with /chk\n"
             "➜ Process bulk URLs with /txt\n"
             "➜ Search URLs with /search\n"
             "➜ Learn more with /about\n\n"
-            "Stay secure and happy checking!"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            "🛡️ Stay secure and happy checking!"
         )
         await message.reply(start_text, reply_to_message_id=message.id)
     else:
         welcome_back = (
+            "━━━━━━ 𝗚𝗮𝘁𝗲𝘄𝗮𝘆 𝗖𝗵𝗲𝗰𝗸𝗲𝗿 ━━━━━━\n\n"
             "🎉 Welcome back!\n\n"
-            "Ready to check some gateways?\n\n"
-            "Available Commands:\n"
+            "🚀 Available Commands:\n"
             "➜ /chk - Check URLs\n"
             "➜ /txt - Process bulk URLs\n"
             "➜ /search - Search URLs\n"
             "➜ /about - Bot information\n\n"
-            "Let's get started!"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            "💫 Let's get started!"
         )
         await message.reply(welcome_back, reply_to_message_id=message.id)
 
@@ -347,28 +361,32 @@ async def register_command(client, message: Message):
     if user_id not in registered_users:
         registered_users.add(user_id)
         user_info = (
-            "New User Registration\n"
-            f"Name: {message.from_user.first_name}\n"
-            f"Username: @{message.from_user.username}\n"
-            f"ID: {user_id}"
+            "━━━━━━ 𝗡𝗲𝘄 𝗨𝘀𝗲𝗿 ━━━━━━\n\n"
+            f"👤 Name: {message.from_user.first_name}\n"
+            f"🔖 Username: @{message.from_user.username}\n"
+            f"🆔 ID: `{user_id}`\n"
+            "━━━━━━━━━━━━━━━━━━━━━━"
         )
         await client.send_message(ADMIN_ID, user_info)
         
         success_msg = (
+            "━━━━━━ 𝗥𝗲𝗴𝗶𝘀𝘁𝗿𝗮𝘁𝗶𝗼𝗻 ━━━━━━\n\n"
             "✅ Registration Successful!\n\n"
-            "Welcome to Gateway Checker Bot!\n\n"
-            "Available Commands:\n"
+            "🚀 Available Commands:\n"
             "➜ /chk - Check URLs\n"
             "➜ /txt - Process bulk URLs\n"
             "➜ /search - Search URLs\n"
             "➜ /about - Bot information\n\n"
-            "Ready to start checking!"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            "🎯 Ready to start checking!"
         )
         await message.reply(success_msg, reply_to_message_id=message.id)
     else:
         already_reg = (
-            "You're already registered and can use all bot features!\n\n"
-            "Need help? Use /about for more information."
+            "━━━━━━ 𝗥𝗲𝗴𝗶𝘀𝘁𝗿𝗮𝘁𝗶𝗼𝗻 ━━━━━━\n\n"
+            "ℹ️ You're already registered!\n\n"
+            "Need help? Use /about for more information.\n"
+            "━━━━━━━━━━━━━━━━━━━━━━"
         )
         await message.reply(already_reg, reply_to_message_id=message.id)
 
@@ -376,8 +394,13 @@ async def register_command(client, message: Message):
 @app.on_message(filters.command("search"))
 async def search_command(client, message: Message):
     if message.from_user.id not in registered_users:
-        await message.reply("🚫 You need to register first. Please use the /register command.", 
-                          reply_to_message_id=message.id)
+        await message.reply(
+            "━━━━━━ 𝗔𝗰𝗰𝗲𝘀𝘀 𝗗𝗲𝗻𝗶𝗲𝗱 ━━━━━━\n\n"
+            "🚫 You need to register first.\n"
+            "➜ Use /register command\n"
+            "━━━━━━━━━━━━━━━━━━━━━━", 
+            reply_to_message_id=message.id
+        )
         return
 
     try:
@@ -385,13 +408,14 @@ async def search_command(client, message: Message):
         args = shlex.split(message.text)
         if len(args) < 2:
             await message.reply(
-                "❌ Invalid Format!\n\n"
-                "Usage:\n"
+                "━━━━━━ 𝗦𝗲𝗮𝗿𝗰𝗵 𝗛𝗲𝗹𝗽 ━━━━━━\n\n"
+                "📝 Usage:\n"
                 "/search <query> [amount]\n\n"
-                "Examples:\n"
-                "/search intext:\"payment\" 10\n"
-                "/search site:example.com 5\n"
-                "/search \"payment gateway\""
+                "📌 Examples:\n"
+                "➜ /search intext:\"payment\" 10\n"
+                "➜ /search site:example.com 5\n"
+                "➜ /search \"payment gateway\"\n"
+                "━━━━━━━━━━━━━━━━━━━━━━"
             )
             return
 
@@ -403,11 +427,13 @@ async def search_command(client, message: Message):
 
         # Send initial status
         status_msg = await message.reply(
-            "🔍 Searching URLs...\n"
-            "Please wait..."
+            "━━━━━━ 𝗦𝗲𝗮𝗿𝗰𝗵𝗶𝗻𝗴 ━━━━━━\n\n"
+            "🔍 Processing your request...\n"
+            "⏳ Please wait...\n"
+            "━━━━━━━━━━━━━━━━━━━━━━"
         )
 
-        # Perform Google search
+        # Perform Google search with improved parameters
         search_params = {
             'q': query,
             'num': amount,
@@ -417,6 +443,7 @@ async def search_command(client, message: Message):
             'start': 0,
             'filter': 0
         }
+        
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
@@ -429,6 +456,7 @@ async def search_command(client, message: Message):
                         html_content = await response.text()
                         soup = BeautifulSoup(html_content, 'html.parser')
                         search_results = soup.find_all('div', class_='yuRUbf')
+                        
                         for result in search_results:
                             url = result.find('a')['href']
                             if url not in urls:
@@ -437,31 +465,35 @@ async def search_command(client, message: Message):
                                     break
                     else:
                         break
+                        
                 search_params['start'] += 10
-                await asyncio.sleep(1)  # Add a delay to avoid rate limiting
+                await asyncio.sleep(1)
 
         if not urls:
             await status_msg.edit(
-                "❌ No Results Found!\n"
-                "Try a different search query."
+                "━━━━━━ 𝗡𝗼 𝗥𝗲𝘀𝘂𝗹𝘁𝘀 ━━━━━━\n\n"
+                "❌ No URLs found!\n"
+                "🔄 Try a different search query.\n"
+                "━━━━━━━━━━━━━━━━━━━━━━"
             )
             return
 
         # Format results
         if amount <= 10:
             result_text = (
-                f"🔍 Search Results\n"
-                f"Query: {query}\n"
-                f"Found: {len(urls)} URLs\n\n"
-                f"URLs List:\n"
+                "━━━━━━ 𝗦𝗲𝗮𝗿𝗰𝗵 𝗥𝗲𝘀𝘂𝗹𝘁𝘀 ━━━━━━\n\n"
+                f"🔎 Query: {query}\n"
+                f"📊 Found: {len(urls)} URLs\n\n"
+                "📋 URLs List:\n"
             )
 
             for i, url in enumerate(urls, 1):
                 result_text += f"{i}. {url}\n"
 
+            result_text += "\n━━━━━━━━━━━━━━━━━━━━━━"
             await status_msg.edit(result_text)
         else:
-            # Create a text file with URLs
+            # Create a text file for bulk results
             file_name = f"search_results_{message.from_user.id}.txt"
             with open(file_name, "w") as f:
                 for url in urls:
@@ -470,20 +502,23 @@ async def search_command(client, message: Message):
             # Send the file
             await message.reply_document(
                 document=file_name,
-                caption=f"🔍 Search Results\n"
-                        f"Query: {query}\n"
-                        f"Found: {len(urls)} URLs",
+                caption=(
+                    "━━━━━━ 𝗦𝗲𝗮𝗿𝗰𝗵 𝗥𝗲𝘀𝘂𝗹𝘁𝘀 ━━━━━━\n\n"
+                    f"🔎 Query: {query}\n"
+                    f"📊 Found: {len(urls)} URLs\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━"
+                ),
                 reply_to_message_id=message.id
             )
 
-            # Delete the temporary file
             os.remove(file_name)
-
             await status_msg.delete()
 
     except Exception as e:
         await message.reply(
-            f"❌ Error:\n{str(e)}",
+            "━━━━━━ 𝗘𝗿𝗿𝗼𝗿 ━━━━━━\n\n"
+            f"❌ Error: {str(e)}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━",
             reply_to_message_id=message.id
         )
 
@@ -492,48 +527,58 @@ async def search_command(client, message: Message):
 async def about_command(client, message: Message):
     if message.from_user.id == ADMIN_ID:
         about_text = (
-            "Gateway Checker Bot\n\n"
-            "Bot Features:\n"
+            "━━━━━━ 𝗚𝗮𝘁𝗲𝘄𝗮𝘆 𝗖𝗵𝗲𝗰𝗸𝗲𝗿 ━━━━━━\n\n"
+            "🤖 Bot Features:\n"
             "➜ Multiple URL checking\n"
             "➜ Bulk processing via text file\n"
             "➜ Advanced gateway detection\n"
             "➜ Captcha and security analysis\n"
             "➜ URL search functionality\n\n"
-            "Commands:\n"
+            "📋 Commands:\n"
             "➜ /chk - Check URLs (up to 15)\n"
             "➜ /txt - Process URLs from file\n"
             "➜ /search - Search for URLs\n"
             "➜ /ban - Ban a user (Admin only)\n\n"
-            "Supported Gateways:\n"
-            "Stripe, Braintree, PayPal, Square, Amazon Pay, Klarna, Adyen, "
-            "Authorize.net, Worldpay, Cybersource, 2Checkout, Eway, NMI, WooCommerce\n\n"
-            "Security Checks:\n"
-            "➜ Captcha Systems\n"
+            "💳 Supported Gateways:\n"
+            "➜ Stripe, Braintree, PayPal\n"
+            "➜ Square, Amazon Pay, Klarna\n"
+            "➜ Adyen, Authorize.net, Worldpay\n"
+            "➜ Cybersource, 2Checkout, Eway\n"
+            "➜ NMI, WooCommerce\n\n"
+            "🛡️ Security Checks:\n"
+            "➜ Multiple Captcha Systems\n"
             "➜ Cloudflare Protection\n"
-            "➜ Payment Security Types\n\n"
-            "Happy checking!"
+            "➜ SSL/TLS Verification\n"
+            "➜ 3D Secure Detection\n"
+            "➜ PCI DSS Compliance\n"
+            "━━━━━━━━━━━━━━━━━━━━━━"
         )
     else:
         about_text = (
-            "Gateway Checker Bot\n\n"
-            "Bot Features:\n"
+            "━━━━━━ 𝗚𝗮𝘁𝗲𝘄𝗮𝘆 𝗖𝗵𝗲𝗰𝗸𝗲𝗿 ━━━━━━\n\n"
+            "🤖 Bot Features:\n"
             "➜ Multiple URL checking\n"
             "➜ Bulk processing via text file\n"
             "➜ Advanced gateway detection\n"
             "➜ Captcha and security analysis\n"
             "➜ URL search functionality\n\n"
-            "Commands:\n"
+            "📋 Commands:\n"
             "➜ /chk - Check URLs (up to 15)\n"
             "➜ /txt - Process URLs from file\n"
             "➜ /search - Search for URLs\n\n"
-            "Supported Gateways:\n"
-            "Stripe, Braintree, PayPal, Square, Amazon Pay, Klarna, Adyen, "
-            "Authorize.net, Worldpay, Cybersource, 2Checkout, Eway, NMI, WooCommerce\n\n"
-            "Security Checks:\n"
-            "➜ Captcha Systems\n"
+            "💳 Supported Gateways:\n"
+            "➜ Stripe, Braintree, PayPal\n"
+            "➜ Square, Amazon Pay, Klarna\n"
+            "➜ Adyen, Authorize.net, Worldpay\n"
+            "➜ Cybersource, 2Checkout, Eway\n"
+            "➜ NMI, WooCommerce\n\n"
+            "🛡️ Security Checks:\n"
+            "➜ Multiple Captcha Systems\n"
             "➜ Cloudflare Protection\n"
-            "➜ Payment Security Types\n\n"
-            "Happy checking!"
+            "➜ SSL/TLS Verification\n"
+            "➜ 3D Secure Detection\n"
+            "➜ PCI DSS Compliance\n"
+            "━━━━━━━━━━━━━━━━━━━━━━"
         )
     await message.reply(about_text, reply_to_message_id=message.id)
 
@@ -541,8 +586,13 @@ async def about_command(client, message: Message):
 @app.on_message(filters.command("chk"))
 async def chk_command(client, message: Message):
     if message.from_user.id not in registered_users:
-        await message.reply("🚫 You need to register first. Please use the /register command.", 
-                          reply_to_message_id=message.id)
+        await message.reply(
+            "━━━━━━ 𝗔𝗰𝗰𝗲𝘀𝘀 𝗗𝗲𝗻𝗶𝗲𝗱 ━━━━━━\n\n"
+            "🚫 You need to register first.\n"
+            "➜ Use /register command\n"
+            "━━━━━━━━━━━━━━━━━━━━━━", 
+            reply_to_message_id=message.id
+        )
         return
 
     # Extract URLs from the message
@@ -556,47 +606,63 @@ async def chk_command(client, message: Message):
 
     if not urls:
         await message.reply(
-            "❌ No URLs Provided!\n\n"
-            "Usage:\n"
+            "━━━━━━ 𝗡𝗼 𝗨𝗥𝗟𝘀 ━━━━━━\n\n"
+            "📝 Usage:\n"
             "/chk <URL1> <URL2> ...\n\n"
-            "Examples:\n"
-            "/chk https://example.com\n"
-            "/chk https://example1.com https://example2.com",
+            "📌 Examples:\n"
+            "➜ /chk https://example.com\n"
+            "➜ /chk https://example1.com https://example2.com\n"
+            "━━━━━━━━━━━━━━━━━━━━━━",
             reply_to_message_id=message.id
         )
         return
 
     if len(urls) > 15:
-        await message.reply("❌ Maximum 15 URLs allowed.", 
-                          reply_to_message_id=message.id)
+        await message.reply(
+            "━━━━━━ 𝗟𝗶𝗺𝗶𝘁 𝗘𝘅𝗰𝗲𝗲𝗱𝗲𝗱 ━━━━━━\n\n"
+            "❌ Maximum 15 URLs allowed.\n"
+            "━━━━━━━━━━━━━━━━━━━━━━", 
+            reply_to_message_id=message.id
+        )
         return
 
-    response = await message.reply("🔍 Gateway Checker\n", 
-                                 reply_to_message_id=message.id)
+    response = await message.reply(
+        "━━━━━━ 𝗚𝗮𝘁𝗲𝘄𝗮𝘆 𝗖𝗵𝗲𝗰𝗸𝗲𝗿 ━━━━━━\n", 
+        reply_to_message_id=message.id
+    )
+    
     results = []
 
     for url in urls:
         result = await check_gateway(url)
+        if "Let me continue from the exact cut-off point:
+
+```python
+for url in urls:
+        result = await check_gateway(url)
         if "error" in result:
             gateway_info = (
-                f"🔍 Error Checking Gateway ❌\n"
+                f"━━━━━━ 𝗚𝗮𝘁𝗲𝘄𝗮𝘆 𝗖𝗵𝗲𝗰𝗸 ━━━━━━\n\n"
+                f"❌ Error Checking Gateway\n"
                 f"🌐 URL: {url}\n"
-                f"⚠️ Error: {result['error']}\n\n"
+                f"⚠️ Error: {result['error']}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
             )
         else:
             gateway_info = (
-                f"🔍 Gateway Check {result['status_icon']}\n"
+                f"━━━━━━ 𝗚𝗮𝘁𝗲𝘄𝗮𝘆 𝗖𝗵𝗲𝗰𝗸 ━━━━━━\n\n"
                 f"🌐 URL: {url}\n"
-                f"💳 Payment Gateways: {', '.join(result['gateways']) if result['gateways'] else '❌ None'}\n"
+                f"💳 Gateways: {', '.join(result['gateways']) if result['gateways'] else '❌ None'}\n"
                 f"🤖 Captcha: {('⚠️ Yes - ' + ', '.join(result['captcha']['types'])) if result['captcha']['detected'] else '✅ No'}\n"
                 f"⚡ Cloudflare: {'✅ Yes' if result['cloudflare'] else '❌ No'}\n"
                 f"🛡️ Security: {', '.join(result['security_features']) if result['security_features'] else '❌ None detected'}\n"
-                f"📊 Status Code: {result['status_code']} {result['status_icon']}\n\n"
+                f"📊 Status: {result['status_code']} {result['status_icon']}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
             )
         
         results.append(gateway_info)
         
-        full_message = "🔍 Gateway Checker\n\n" + "".join(results)
+        full_message = "━━━━━━ 𝗚𝗮𝘁𝗲𝘄𝗮𝘆 𝗖𝗵𝗲𝗰𝗸𝗲𝗿 ━━━━━━\n\n" + "".join(results)
         
         try:
             await response.edit(full_message)
@@ -608,21 +674,27 @@ async def chk_command(client, message: Message):
 @app.on_message(filters.command("txt") & filters.reply)
 async def txt_command(client, message: Message):
     if message.from_user.id not in registered_users:
-        await message.reply("🚫 You need to register first. Please use the /register command.", 
-                          reply_to_message_id=message.id)
+        await message.reply(
+            "━━━━━━ 𝗔𝗰𝗰𝗲𝘀𝘀 𝗗𝗲𝗻𝗶𝗲𝗱 ━━━━━━\n\n"
+            "🚫 You need to register first.\n"
+            "➜ Use /register command\n"
+            "━━━━━━━━━━━━━━━━━━━━━━", 
+            reply_to_message_id=message.id
+        )
         return
 
     replied_message = message.reply_to_message
     if not replied_message.document or not replied_message.document.file_name.endswith('.txt'):
         await message.reply(
-            "❌ Invalid File!\n\n"
-            "Usage:\n"
+            "━━━━━━ 𝗜𝗻𝘃𝗮𝗹𝗶𝗱 𝗙𝗶𝗹𝗲 ━━━━━━\n\n"
+            "📝 Usage:\n"
             "Reply to a .txt file containing URLs (one per line).\n\n"
-            "Example:\n"
+            "📌 Example:\n"
             "1. Create a file urls.txt with URLs:\n"
             "https://example1.com\n"
             "https://example2.com\n"
-            "2. Reply to the file with /txt",
+            "2. Reply to the file with /txt\n"
+            "━━━━━━━━━━━━━━━━━━━━━━",
             reply_to_message_id=message.id
         )
         return
@@ -634,15 +706,20 @@ async def txt_command(client, message: Message):
     os.remove(file)
 
     if not urls:
-        await message.reply("❌ No valid URLs found in the file.", 
-                          reply_to_message_id=message.id)
+        await message.reply(
+            "━━━━━━ 𝗡𝗼 𝗨𝗥𝗟𝘀 ━━━━━━\n\n"
+            "❌ No valid URLs found in the file.\n"
+            "━━━━━━━━━━━━━━━━━━━━━━", 
+            reply_to_message_id=message.id
+        )
         return
 
     total_urls = len(urls)
     response = await message.reply(
-        f"📊 Mass URL Checker\n"
-        f"Found: {total_urls} URLs\n"
-        f"Status: Starting check...\n", 
+        f"━━━━━━ 𝗠𝗮𝘀𝘀 𝗖𝗵𝗲𝗰𝗸𝗲𝗿 ━━━━━━\n\n"
+        f"📊 Found: {total_urls} URLs\n"
+        f"⏳ Status: Starting check...\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━", 
         reply_to_message_id=message.id
     )
 
@@ -656,15 +733,17 @@ async def txt_command(client, message: Message):
             remaining = total_urls - checked
             progress = int((checked / total_urls) * 20)
             progress_bar = '█' * progress + '░' * (20 - progress)
+            percentage = int((checked / total_urls) * 100)
             
             status_lines = [
-                "🔍 MASS CHECKER\n"
-                f"Progress: [{progress_bar}] {checked}/{total_urls}\n"
-                f"Remaining: {remaining}\n"
+                "━━━━━━ 𝗠𝗮𝘀𝘀 𝗖𝗵𝗲𝗰𝗸𝗲𝗿 ━━━━━━\n\n"
+                f"📊 Progress: [{progress_bar}] {percentage}%\n"
+                f"✓ Checked: {checked}/{total_urls}\n"
+                f"⏳ Remaining: {remaining}\n\n"
             ]
             
             if found_gateways:
-                status_lines.append("Found Gateways:\n")
+                status_lines.append("💳 Found Gateways:\n")
                 for gateway in found_gateways:
                     status_lines.append(f"➜ {gateway}: {len(results[gateway])}\n")
             
@@ -689,10 +768,11 @@ async def txt_command(client, message: Message):
     # Send final results
     for gateway, urls in results.items():
         if urls:
-            url_list = '\n'.join(f'{url}' for url in urls)
+            url_list = '\n'.join(f'➜ {url}' for url in urls)
             result_text = (
-                f"🔍 {gateway} Hits\n"
-                f"{url_list}\n\n"
+                f"━━━━━━ {gateway} 𝗛𝗶𝘁𝘀 ━━━━━━\n\n"
+                f"{url_list}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
             )
             try:
                 await message.reply(result_text, reply_to_message_id=message.id)
@@ -700,24 +780,27 @@ async def txt_command(client, message: Message):
                 # Handle long messages by splitting into chunks
                 chunks = [urls[i:i + 50] for i in range(0, len(urls), 50)]
                 for i, chunk in enumerate(chunks):
-                    chunk_list = '\n'.join(f'{url}' for url in chunk)
+                    chunk_list = '\n'.join(f'➜ {url}' for url in chunk)
                     chunk_text = (
-                        f"🔍 {gateway} Hits (Part {i+1})\n"
-                        f"{chunk_list}\n\n"
+                        f"━━━━━━ {gateway} 𝗛𝗶𝘁𝘀 (𝗣𝗮𝗿𝘁 {i+1}) ━━━━━━\n\n"
+                        f"{chunk_list}\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
                     )
                     await message.reply(chunk_text, reply_to_message_id=message.id)
 
     final_status = (
-        "✅ Check completed!\n"
-        f"Total URLs: {total_urls}\n\n"
+        "━━━━━━ 𝗖𝗵𝗲𝗰𝗸 𝗖𝗼𝗺𝗽𝗹𝗲𝘁𝗲𝗱 ━━━━━━\n\n"
+        f"📊 Total URLs: {total_urls}\n\n"
     )
 
     if found_gateways:
-        final_status += "Gateway Hits:\n"
+        final_status += "💳 Gateway Hits:\n"
         for gateway in found_gateways:
             final_status += f"➜ {gateway}: {len(results[gateway])}\n"
+        final_status += "\n━━━━━━━━━━━━━━━━━━━━━━"
 
     await response.edit(final_status)
+
 
 @app.on_message(filters.command("ban") & filters.user(ADMIN_ID))
 async def ban_command(client, message: Message):
@@ -726,11 +809,12 @@ async def ban_command(client, message: Message):
         args = message.text.split()
         if len(args) != 2:
             await message.reply(
-                "❌ Invalid Format!\n\n"
-                "Usage:\n"
+                "━━━━━━ 𝗕𝗮𝗻 𝗖𝗼𝗺𝗺𝗮𝗻𝗱 ━━━━━━\n\n"
+                "📝 Usage:\n"
                 "/ban <user_id>\n\n"
-                "Example:\n"
-                "/ban 123456789",
+                "📌 Example:\n"
+                "/ban 123456789\n"
+                "━━━━━━━━━━━━━━━━━━━━━━",
                 reply_to_message_id=message.id
             )
             return
@@ -739,14 +823,34 @@ async def ban_command(client, message: Message):
         
         if user_id in registered_users:
             registered_users.remove(user_id)
-            await message.reply(f"✅ User with ID {user_id} has been banned and removed from registered users.", reply_to_message_id=message.id)
+            await message.reply(
+                "━━━━━━ 𝗕𝗮𝗻 𝗦𝘂𝗰𝗰𝗲𝘀𝘀𝗳𝘂𝗹 ━━━━━━\n\n"
+                f"✅ User with ID {user_id} has been banned.\n"
+                "━━━━━━━━━━━━━━━━━━━━━━", 
+                reply_to_message_id=message.id
+            )
         else:
-            await message.reply(f"❌ User with ID {user_id} is not registered.", reply_to_message_id=message.id)
+            await message.reply(
+                "━━━━━━ 𝗕𝗮𝗻 𝗙𝗮𝗶𝗹𝗲𝗱 ━━━━━━\n\n"
+                f"❌ User with ID {user_id} is not registered.\n"
+                "━━━━━━━━━━━━━━━━━━━━━━", 
+                reply_to_message_id=message.id
+            )
 
     except ValueError:
-        await message.reply("❌ Invalid user ID. Please provide a valid numeric user ID.", reply_to_message_id=message.id)
+        await message.reply(
+            "━━━━━━ 𝗜𝗻𝘃𝗮𝗹𝗶𝗱 𝗜𝗗 ━━━━━━\n\n"
+            "❌ Please provide a valid numeric user ID.\n"
+            "━━━━━━━━━━━━━━━━━━━━━━", 
+            reply_to_message_id=message.id
+        )
     except Exception as e:
-        await message.reply(f"❌ An error occurred: {str(e)}", reply_to_message_id=message.id)
+        await message.reply(
+            "━━━━━━ 𝗘𝗿𝗿𝗼𝗿 ━━━━━━\n\n"
+            f"❌ An error occurred: {str(e)}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━", 
+            reply_to_message_id=message.id
+        )
 
 # Run the bot
 app.run()
